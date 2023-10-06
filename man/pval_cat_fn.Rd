@@ -10,8 +10,10 @@ pval_cat_fn(
   sims = -1,
   btsp = 500,
   title = "",
-  stat = "chisq",
-  stat.overide = "no",
+  stat = "chi_midp",
+  stat.override = "no",
+  fisher.sim = "y",
+  fish.n.sims = 10000,
   method = "mix",
   verbose = TRUE
 )
@@ -27,11 +29,15 @@ pval_cat_fn(
 
 \item{title}{optional title for plots}
 
-\item{stat}{statistical test to be used 'chisq' or 'fisher'}
+\item{stat}{statistical test to be used 'chisq', 'fisher', 'midp' or 'midp.epitools' (from epitools package), 'midp.sas' (as calculated in SAS), or combinations -if chisq is not appropriate because expected cells<5, use second test: 'chi_fish', 'chi_midp' or 'chi_midp.epi','chi_midp.sas'}
 
-\item{stat.overide}{if 'yes' then test specified in stat will be used rather than values for stat in data frame}
+\item{stat.override}{if 'yes' then test specified in stat will be used rather than values for stat in data frame}
 
-\item{method}{'sm', 'mix', or 'ind'. 'ind' does test on individual data, 'sm' summarises data and then does test on summary data, 'mix' does 'ind' for fisher and 'sm' for chisq. Duration varies with size of studies, test, and number of simulations. Experiment before running large simulations.}
+\item{fisher.sim}{"yes" or "no" indicator whether to allow fisher test to simulate p-values for >2*2 tables}
+
+\item{fish.n.sims}{number of simulations to use in Fisher test, default 10,000}
+
+\item{method}{'sm', 'mix', or 'ind'. 'ind' does test on individual data, 'sm' summarises data and then does test on summary data, 'mix' does 'ind' for fisher and 'sm' for others. Duration varies with size of studies, test, and number of simulations. Experiment before running large simulations.}
 
 \item{verbose}{TRUE or FALSE indicates whether progress bar and comments show and prints plot}
 }

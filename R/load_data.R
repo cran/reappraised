@@ -479,7 +479,8 @@ load_clean <- function (
     names.s <- names [substring(names, 1, 1) == "s" & substring(names,2,2) %in% as.character(0:9)]
     names_del <- c(names.m [3:length(names.m)], names.n [3:length(names.n)], names.s [3:length(names.s)])
 
-    a <- a %>% dplyr::select(-gm, -grp, -del, - all_of(names_del))
+    if (max(a$gm == 2)) {a <- a %>% dplyr::select(-gm, -grp, -del)
+    } else if (max(a$gm >2)) {a <- a %>% dplyr::select(-gm, -grp, -del, - all_of(names_del))}
 
     return (a)
   }
@@ -1017,4 +1018,5 @@ utils::globalVariables(c(".", ".N", "Match", "No match", "SD", "Var1", "bpv", "d
                          "var_name_original", "variable", "x", "x1", "y", "cat_all_data", "cat_data", "cohort_data",
                          "rnorm", "match_data", "sr_data", "final", "generic_data", "pval_cat_data",
                          "N", "g", "g1", "p_num", "sim", "study_no", "var_no", "anova_data", "study.mean",
-                         "study.sem", "study.sd", "dec", "round.sm", "study.sumsqdiff"))
+                         "study.sem", "study.sd", "dec", "round.sm", "study.sumsqdiff", "stat1",
+                         "warn", "Chisquare.warn"))

@@ -7,6 +7,8 @@
 cat_all_fn(
   df = cat_all_data,
   comp.pvals = "no",
+  fisher.sim = "y",
+  fish.n.sims = 10000,
   binom = "no",
   two_levels = "no",
   del.disparate = "yes",
@@ -20,6 +22,10 @@ cat_all_fn(
 \item{df}{data frame generated from load_clean function}
 
 \item{comp.pvals}{"yes" or "no" indicator whether reported and calculated p-values should be compared}
+
+\item{fisher.sim}{"yes" or "no" indicator whether to allow fisher test to simulate p-values for >2*2 tables}
+
+\item{fish.n.sims}{number of simulations to use in Fisher test, default 10,000}
 
 \item{binom}{"yes" or "no" indicator whether observed to expected distributions of binomial variables should be calculated}
 

@@ -8,6 +8,8 @@
 #'
 #' @param df data frame generated from load_clean function
 #' @param comp.pvals "yes" or "no" indicator whether reported and calculated p-values should be compared
+#' @param fisher.sim "yes" or "no" indicator whether to allow fisher test to simulate p-values for >2*2 tables
+#' @param fish.n.sims number of simulations to use in Fisher test, default 10,000
 #' @param binom "yes" or "no" indicator whether observed to expected distributions of binomial variables should be calculated
 #' @param two_levels "yes" or "no" indicator whether variables with more than 2 levels should be collapsed to 2 levels
 #' @param del.disparate if yes, data in which the absolute difference between group sizes is >20% are deleted
@@ -97,7 +99,7 @@
 #' @md
 
 
-cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_levels= "no", del.disparate = "yes",
+cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", fisher.sim = "y", fish.n.sims =10000, binom = "no", two_levels= "no", del.disparate = "yes",
                         excl.level= "yes", seed = 0, title = "", verbose = TRUE) {
 
   #import dataset
@@ -131,11 +133,15 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
 
       #calculate p-values
       #convert to wide format for level
+      #matrix is levels = row & groups = column = n_levels_group
+      #make sure variables are in right order by arrange and factor
       b <- a %>% dplyr::select(study, var, level, starts_with("n", ignore.case = TRUE)) %>%
         tidyr::gather (k, v, starts_with("n", ignore.case = TRUE)) %>%
         dplyr::mutate(k = paste0(gsub("[0-9]+","", k), "_", gsub("\\D", "", k))) %>%
         tidyr::separate(k, into = c("k1", "k2")) %>%
-        tidyr::unite(k, k1, level, sep = "_") %>% tidyr::unite(k, k, k2, sep = "") %>% tidyr::spread (k, v)
+        dplyr::arrange(level, k2) %>%  tidyr::unite(k, k1, level, sep = "_") %>%
+        tidyr::unite(k, k, k2, sep = "_") %>%
+        dplyr::mutate(k = factor(k, levels = unique(k))) %>% tidyr::spread (k, v)
 
       b <- dplyr::left_join(b, a %>% dplyr::select(study, var, levels_no ,group) %>%
                               dplyr::group_by(study, var) %>% dplyr::slice (1), by = c("study", "var"))
@@ -150,13 +156,22 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
       nm_p <- c("pc", "pcc", "pf", "plr", "pchm", "p.m", "p.f", "p.c", "pmdpsas")
       b [, nm_p] <- NA
 
+      b$Chisquare.warn <- NA
+
       #calculate p by different methods
+      #matrix is levels = row & groups = column = n_levels_group
       for (i in 1:nrow(b)) {
         x <- na.omit(as.numeric(b [i, nm]))
         x <- matrix(x, byrow = TRUE, nrow = b$levels_no [i])
-        b$pc [i] <- suppressWarnings(chisq.test(x, correct = FALSE)$p.value)
+        chi <- suppressWarnings(chisq.test(x, correct = FALSE))
+        b$pc [i] <- chi$p.value
+        if(length(chi$expected) == 4 & sum (chi$expected <5) >0 |
+              length(chi$expected) > 4 & (sum(chi$expected <1) >0 | sum(chi$expected <5) / length(chi$expected) > 0.2)) {
+          b$Chisquare.warn [i] <- "exp <5"}
         b$pcc [i] <- suppressWarnings(chisq.test(x, correct = TRUE)$p.value)
-        b$pf [i] <-  fisher.test(x, workspace = 2e8)$p.value
+        if (tolower(substr(fisher.sim,1,1)) == "y") {
+          b$pf [i] <-  suppressWarnings(fisher.test(x, workspace = 2e8, simulate.p.value = TRUE, B= fish.n.sims)$p.value)
+        } else {b$pf [i] <-  suppressWarnings(fisher.test(x, workspace = 2e8)$p.value)}
         b$plr [i] = vcd::assocstats(x)$chisq_tests [1,3]
         b$pchm [i] = vcdExtra::CMHtest(x)$table [1,3]
         if (b$group [i] == 2 & b$levels_no [i] == 2) { #epitools only for 2*2
@@ -186,9 +201,26 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
 
       #now merge original p/test back in
       if (!"stat" %in% colnames(a)) {a$stat <- NA}
+
+      a$stat <- tolower(a$stat)
+
+      a$stat1 <- a$stat #keep originals
+
+      if (sum(! a$stat %in% c("chisq", "chisqc", "fisher", "midp", "lr", "mh", NA))>0) {
+        if(vb == "y") {cat("\nValues for 'stat' are 'chisq', 'chisqc', 'fisher', 'midp', 'lr', 'mh'\nOther values have been removed\n\n")
+        }
+        a$stat [!a$stat %in% c("chisq", "chisqc", "fisher", "midp", "lr", "mh")] <- NA
+      }
+
+      if (sum(a$levels_no*a$group >4 & a$stat %in% "midp") >0) {
+        if(vb == "y") {cat("\nMid-p test not available for variables with group >2 or levels >2\n'midp' for these cases have been removed\n\n")
+        }
+        a$stat [a$levels_no*a$group >4 & a$stat %in% "midp"] <- NA
+      }
+
       if (!"p" %in% colnames(a)) {a$p <- NA}
       b <- dplyr::left_join(b,
-                            a %>% dplyr::select(study, var, p, stat) %>% dplyr::arrange(study, var, p, stat) %>%
+                            a %>% dplyr::select(study, var, p, stat, stat1) %>% dplyr::arrange(study, var, p, stat) %>%
                               dplyr::group_by(study, var) %>% dplyr::slice(1),
                             by = c("study", "var"))
 
@@ -209,10 +241,8 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
       b [, nm_p] <- purrr::map(b [,nm_p], ~ifelse(!is.na(b$p_n), round(.x, b$p_d), round(.x, max(b$p_d,3, na.rm= TRUE))), b$p_n, b$p_d)
 
       #compare p results
-      nm_p <- c("pc", "pcc", "pf", "plr", "pchm", "p.m", "p.f", "p.c", "pmdpsas")
-      names (nm_p) <- c("chisq", "chisqc", "fisher", "lr", "mh", "midp","na", "na2", "na3")
-
-      b$stat <- tolower(b$stat)
+      nm_p <- c("pc", "pf", "pcc", "plr", "pchm", "p.m", "p.f", "p.c", "pmdpsas")
+      names (nm_p) <- c("chisq", "fisher", "chisqc", "lr", "mh", "midp","na", "na2", "na3")
 
       for (i in 1:NROW(b)) {b$p_match [i] <- ifelse(!is.na(nm_p [b$stat [i]]), b [i, nm_p [b$stat [i]]], NA)}
       b$p_match2 <- ifelse(!is.na(b$stat) & b$stat == "midp", b$pmdpsas, NA)
@@ -228,17 +258,45 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
         if (is.na(b$stat [i])) { #no test result
           if (b$group [i] * b$levels_no [i] > 4) {
             if (!is.na(b$p_g [i])) {
-              b$m_t [i] <- ifelse(b$pc [i] > b$p_g [i], "Match", "No match")} #> and >2*2
-            if (!is.na(b$p_l [i])) {
-              b$m_t [i] <- ifelse(b$pc [i] < b$p_l [i], "Match", "No match")} #< and >2*2
-            b$m_t_comment [i] <- "No test, >2*2, p=chisquare"} #end of >2*2
+              #find if p_calc > p_rep
+              #no match then match, greater than
+              if (sum (b [i, nm_p] > b$p_g [i], na.rm = TRUE) ==0) {
+                b$m_t [i] <- "No match"; b$m_t_comment [i] <- "No reported test, >2*2"
+              } else {
+                b$m_t [i] <- "Match"; b$m_t_comment [i] <- paste0("No reported test, >2*2, test=",
+                                                names(nm_p [which.max (b [i, nm_p] > b$p_g [i])]))
+              }
+          }
+
+          if (!is.na(b$p_l [i])) {
+            #lower than
+            if (sum (b [i, nm_p] < b$p_l [i], na.rm = TRUE) ==0) {
+              b$m_t [i] <- "No match"; b$m_t_comment [i] <- "No reported test, >2*2"
+            } else {
+              b$m_t [i] <- "Match"; b$m_t_comment [i] <- paste0("No reported test, >2*2, test=",
+                                                                names(nm_p [which.max (b [i, nm_p] < b$p_l [i])]))
+            }
+          }
+        } #end of >2*2
 
           if (b$group [i] * b$levels_no [i] <= 4) {
             if (!is.na(b$p_g [i])) {
-              b$m_t [i] <- ifelse(b$pc [i] > b$p_g [i], "Match", "No match")} #> and 2*2
+              if (sum (b [i, nm_p] > b$p_g [i], na.rm = TRUE) ==0) {
+                b$m_t [i] <- "No match"; b$m_t_comment [i] <- "No reported test, 2*2"
+              } else {
+                b$m_t [i] <- "Match"; b$m_t_comment [i] <- paste0("No reported test, 2*2, test=",
+                                                                  names(nm_p [which.max (b [i, nm_p] > b$p_g [i])]))
+              }
+            }
             if (!is.na(b$p_l [i])) {
-              b$m_t [i] <- ifelse(b$pc [i] < b$p_l [i], "Match", "No match")} #< and 2*2
-            b$m_t_comment [i] <- "No test, 2*2, p=midp (r)"} #end of 2*2
+              if (sum (b [i, nm_p] < b$p_l [i], na.rm = TRUE) ==0) {
+                b$m_t [i] <- "No match"; b$m_t_comment [i] <- "No reported test, 2*2"
+              } else {
+                b$m_t [i] <- "Match"; b$m_t_comment [i] <- paste0("No reported test, 2*2, test=",
+                                                                  names(nm_p [which.max (b [i, nm_p] < b$p_l [i])]))
+              }
+            }
+          }#end of 2*2
         } #end of no test result
 
         if (!is.na(b$stat [i])) {  #test result
@@ -262,7 +320,7 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
 
 
       b$p_df_stat <- b$p_df <- NA
-      nm_ph <- c("p.m","pc","pf","pmdpsas","pcc","plr","pchm","p.f","p.c")
+      nm_ph <- c("pc","pf","p.m","pmdpsas","pcc","plr","pchm","p.f","p.c")
       #difference between reported values
       for (i in 1:NROW(b)) {
         if (is.na(b$p_n [i])) {next}
@@ -271,13 +329,26 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
           b$p_df [i] <- ifelse(!is.na(b$p_n [i]), min(abs(b$p_n [i] - b [i, nm_p]), na.rm = TRUE), NA)
           b$p_df_stat [i]  <-  names(which(nm_p == nm_ph [which.max(b$p_n [i] == b [i, nm_ph] + b$p_df [i])]))
         }
-        if (!is.na(b$stat [i])) {
-          b$p_df_stat [i]  <-  b$stat [i]
-          b$p_df [i]  <-  abs(b$p_n [i] - b [i, nm_p [b$stat [i]]])
+        if (!is.na(b$stat[i])) {
+          b$p_df_stat[i] <- b$stat[i]
+          if (!b$stat [i] == "midp") {b$p_df[i] <- abs(b$p_n[i] - b[i, nm_p[b$stat[i]]])
+          } else {
+             if (abs(b$p_n [i] - b$p.m [i]) < abs(b$p_n [i] - b$pmdpsas [i])) {
+               b$p_df_stat [i] <- "midp.epitools"
+               b$p_df [i] <-abs(b$p_n [i] - b$p.m [i])
+             } else {
+               b$p_df_stat [i] <-  "midp.SAS"
+               b$p_df [i] <- abs(b$p_n [i] - b$pmdpsas [i])
+             }
+          }
         }
       }
       b$p_df_stat <- ifelse(!is.na(b$p_df_stat),
                             paste0(toupper(substr(b$p_df_stat, 1, 1)), substr(b$p_df_stat, 2, nchar(b$p_df_stat))), NA)
+
+      #change midp titles
+      b$p_df_stat <- ifelse(b$p_df_stat %in% "Na3", "Midp.sas",
+                            ifelse(b$p_df_stat %in% "Midp", "Midp.epitools", b$p_df_stat))
 
       #output
       #compare reported vs unreported p-values
@@ -295,11 +366,11 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
       if (sum(!is.na(b$stat))>0) {
         diff <- dplyr::left_join(diff,
                                  dplyr::left_join (b %>% dplyr::filter(!is.na(p_n)) %>%
-                                                     dplyr::mutate(stat = ifelse(is.na(stat), "No test reported", stat)) %>%
-                                                     dplyr::count(stat, df.groupsdf) %>% dplyr::rename(name =df.groupsdf),
+                                                     dplyr::mutate(stat1 = ifelse(is.na(stat1), "No test reported", stat1)) %>%
+                                                     dplyr::count(stat1, df.groupsdf) %>% dplyr::rename(name =df.groupsdf),
                                                    nm, by = "name") %>% dplyr::select (-name) %>%
-                                   dplyr::mutate (stat = paste0(toupper(substr(stat, 1, 1)), substr(stat, 2, nchar(stat)))) %>%
-                                   tidyr::spread (stat, n),
+                                   dplyr::mutate (stat1 = paste0(toupper(substr(stat1, 1, 1)), substr(stat1, 2, nchar(stat1)))) %>%
+                                   tidyr::spread (stat1, n),
                                  by = "diff_in_p_value")}
       d2 <- ncol(diff) - d1
       diff <- dplyr::left_join(diff,
@@ -363,10 +434,11 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
       }
 
       #return data
-      b1 <- b %>% dplyr::select(study,var, p, stat, p_df, p_df_stat, m_t, m_t_comment, pc, pf, p.m, pcc, plr, pchm, pmdpsas, group, levels_no) %>%
+      b$warn <- ifelse(b$p_df_stat %in% "Chisq", b$Chisquare.warn, NA)
+      b1 <- b %>% dplyr::select(study,var, p, stat1, p_df, p_df_stat, warn, m_t, m_t_comment, pc, Chisquare.warn, pf, p.m, pcc, plr, pchm, pmdpsas, group, levels_no) %>%
         dplyr::ungroup () %>% as.data.frame ()
       colnames (b1) <-  c("study", "variable", "reported_p_value", "test_reported", "difference_reported_calculated_p_values",
-                          "test_calculated", "reported_p_matches_threshold", "threshold_comment", "chisquare", "fisher",
+                          "test_calculated", "warn.message", "reported_p_matches_threshold", "threshold_comment", "chisquare", "chisquare.warning","fisher",
                           "midp_r_epitools","chisquare_continuty", "likelihood_ratio", "mantel_haenszel", "midp_SAS_calculation",
                           "groups", "levels_of_variable")
 
@@ -466,7 +538,7 @@ cat_all_fn <- function (df = cat_all_data, comp.pvals = "no", binom = "no", two_
     }
 
     graph <- list()
-    graph [1:2] <- cat_graph (gph= b,  xtitle = "Number with characteristic per group", ytitle = "Number of Number of trial groups*variables",
+    graph [1:2] <- cat_graph (gph= b,  xtitle = "Number with characteristic per group", ytitle = "Number of trial groups*variables",
                               size = sz, sfx = "", text = list(length(unique(a$study)), paste(sum(b$obs), "groups*variables")),
                               fn = "cat_all", ti = "Y", top = "Y", t= title)
 

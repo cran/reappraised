@@ -131,7 +131,13 @@ pval_graph <- function (x = p, round = "y", l=labels, t= title, ref="n", rp= "")
   if (ref == "y") {
     refp <- rp$prop
     p$ref <- refp
-    p$p_XS_ref [1] <-suppressWarnings(chisq.test(p$Freq, p= refp)) [[3]]
+    #remove all zeros otherwise error;
+    for (i in 1:nrow(p)) {
+      if (p$ref [i] == 0) {
+        p$ref <- p$ref - 10^-7
+        p$ref [i] <- p$ref [i] +10^-6}
+    }
+    p$p_XS_ref [1] <-suppressWarnings(chisq.test(p$Freq, p= p$ref)) [[3]]
   }
 
   p$x <- seq(0.05,0.95,0.1)
@@ -275,11 +281,17 @@ cat_graph <- function (gph= oe,  xtitle = "", ytitle = "", size = 5, sfx = "",
                                      ifelse(zy < 40, 50,
                                             ifelse(zy < 60, 75,
                                                    ifelse(zy < 75, 90,
-                                                          ifelse(zy < 100, 125,150))))))))
+                                                          ifelse(zy < 100, 125, 150))))))))
 
   zz1 <- c(8,15,25,35,50,75,90,125,150)
   zz2 <- c(2,3,5,5,10,15,15,25,25)
   zz3 <- which(zz1 == zy1)
+
+  if (zy > 140) {
+    zy1 <- (ceiling((zy + 25)/50) *50)
+    zz2 [zz3] <- 50
+  }
+
   abs <- abs +  ggplot2::scale_y_continuous(limits= c(0,zy1), breaks = seq(0, zy1, zz2 [zz3])) +
     ggplot2::coord_fixed(ratio = zx/zy1*.67)
 
@@ -458,7 +470,7 @@ digit_g <- function (x = p, l=labels, t= title) {
 
   p$exp <- sum(p$Freq)/10
   p$p_XS  <- NA
-  p$p_XS [1] <-chisq.test(p$Freq, p= rep(0.1,10)) [[3]]
+  p$p_XS [1] <-suppressWarnings(chisq.test(p$Freq, p= rep(0.1,10))) [[3]]
 
   p$prop <- p$Freq/sum(p$Freq)
   p$ref <-  rep(0.1,10)

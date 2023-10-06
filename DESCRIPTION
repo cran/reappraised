@@ -1,7 +1,7 @@
 Package: reappraised
 Title: Statistical Tools for Assessing Publication Integrity of Groups
         of Trials
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: 
     person("Mark", "Bolland", email = "m.bolland@auckland.ac.nz", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0003-0465-2674"))
@@ -33,8 +33,8 @@ LazyData: true
 Suggests: knitr, rmarkdown
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2023-03-18 20:23:56 UTC; mbol006
+Packaged: 2023-10-06 01:33:59 UTC; mbol006
 Author: Mark Bolland [aut, cre, cph] (<https://orcid.org/0000-0003-0465-2674>)
 Maintainer: Mark Bolland <m.bolland@auckland.ac.nz>
 Repository: CRAN
-Date/Publication: 2023-03-20 11:10:02 UTC
+Date/Publication: 2023-10-06 04:20:02 UTC
